@@ -36,6 +36,8 @@ import {
   ScrollText,
   Image,
   Circle,
+  CreditCard,
+  Rocket,
 } from 'lucide-react'
 import { cn } from '@/utils/cn'
 
@@ -104,6 +106,33 @@ const tutorialData: TutorialSection[] = [
       { id: 'items-ai-prompt', title: 'AI提示词', description: '设置商品的AI回复提示词，让AI更了解商品特点。' },
       { id: 'items-spec-switch', title: '多规格开关', description: '开启后支持按规格匹配不同的发货内容。', important: true },
       { id: 'items-multi-switch', title: '多数量发货开关', description: '开启后支持按购买数量发送多份卡券。' },
+    ],
+  },
+  {
+    id: 'cards',
+    icon: CreditCard,
+    title: '卡券管理',
+    description: '管理所有卡券（商品的发货规则）。对接货源平台（如蜜蜂汇云）的卡券在这里创建和配置。详细图文步骤见项目 docs/货源接入与卡券配置教程.md。',
+    children: [
+      { id: 'cards-create', title: '新建卡券', description: '选择卡券类型：固定文字 / 批量数据 / API接口 / 图片 / 蜜蜂直充。蜜蜂直充需填写上游商品ID（miniunit_id），在货源平台商品详情中复制。' },
+      { id: 'cards-mf-api', title: '蜜蜂直充两种发货模式', description: '充值链接模式（买家在网页填手机号充值，用于会员直充/话费）；兑换链接模式（放单后直接发兑换链接，用于餐饮代下单）。兑换链接模式支持 {voucher} 占位符自定义发货文案。' },
+      { id: 'cards-copy', title: '复制卡券', description: '一键复制已有卡券的全部配置，只改名称即可，适合批量录入周卡/月卡/季卡等多规格。' },
+      { id: 'cards-relate', title: '关联商品', description: '选中卡券点「关联商品」，可关联一个或多个闲鱼商品；也可在商品管理→发货配置中添加。自动发货时按订单商品匹配卡券。' },
+      { id: 'cards-multi-spec', title: '多规格卡券', description: '同一商品不同规格对应不同卡券时开启。填写规格名称+规格值，自动发货时精确匹配，不匹配则不发货。' },
+      { id: 'cards-note', title: '备注变量', description: '非图片类型卡券的备注必须包含 {DELIVERY_CONTENT}（发货内容）。可选变量 {order_id} {item_id} {item_title} {buyer_name} {buyer_id} {seller_name}；用 ###### 拆分为多条消息。' },
+    ],
+  },
+  {
+    id: 'publish',
+    icon: Rocket,
+    title: '商品发布',
+    description: '通过闲鱼官方发布接口直接发布宝贝，支持类目推荐、图片上传、多规格发布，发布成功后自动同步入库。',
+    children: [
+      { id: 'publish-category', title: '类目推荐', description: '调用类目推荐接口获取商品分类，如 卡券充值→餐饮美食→快餐小吃→西式快餐（麦当劳）、咖啡/奶茶/冷饮（瑞幸）。' },
+      { id: 'publish-images', title: '图片上传', description: '先通过上传接口把商品图上传到服务器，获取绝对路径，发布时传入。' },
+      { id: 'publish-submit', title: '发布宝贝', description: '填写标题（≤30字）、价格、规格（price>0、stock）、分类5件套、图片，调用发布接口，成功后返回 item_id 并自动入库。' },
+      { id: 'publish-relate', title: '发布后配置', description: '宝贝入库后到「卡券管理」把新商品关联上对应卡券，全自动发货链路即打通。' },
+      { id: 'publish-warn', title: '注意事项', description: '标题超30字会报 FAIL_BIZ_TITLE_LENGTH_TOO_LONG；部分类目有禁售风险（如话费直充曾被静默删除），发布前确认类目合规。', important: true },
     ],
   },
   {
