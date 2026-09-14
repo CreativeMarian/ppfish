@@ -67,6 +67,10 @@ interface CardFormData {
   /** 蜜蜂直充配置（只读展示） */
   apiMiniunitId: string
   apiRechargePage: boolean
+  /** 蜜蜂兑换链接模式（餐饮代下单：直接发链接，无需买家填手机号） */
+  apiVoucherMode: boolean
+  /** 蜜蜂发货成功文案模板（支持 {voucher} 占位符） */
+  apiSuccessMessage: string
 }
 
 interface CardFormModalProps {
@@ -113,6 +117,8 @@ export function cardToFormData(card: CardData): CardFormData {
     specValue: card.spec_value || '',
     apiMiniunitId: (card.api_config as any)?.miniunit_id || '',
     apiRechargePage: !!(card.api_config as any)?.recharge_page,
+    apiVoucherMode: !(card.api_config as any)?.recharge_page && !(card.api_config as any)?.require_account,
+    apiSuccessMessage: (card.api_config as any)?.success_message || '',
   }
 }
 
@@ -149,6 +155,8 @@ export const emptyCardFormData: CardFormData = {
   specValue: '',
   apiMiniunitId: '',
   apiRechargePage: false,
+  apiVoucherMode: false,
+  apiSuccessMessage: '',
 }
 
 export function CardFormModal({ cardId, initialData, onClose, onSaved }: CardFormModalProps) {
@@ -321,14 +329,32 @@ export function CardFormModal({ cardId, initialData, onClose, onSaved }: CardFor
         } else {
           // 新建：按蜜蜂直充标准配置构造 api_config
           const mid = formData.apiMiniunitId.trim()
-          cardData.api_config = {
-            require_account: true,
-            recharge_page: true,
-            poll_delay: 60,
-            poll_interval: 60,
-            max_poll: 8,
-            datas: { target: '{account}' },
-            miniunit_id: mid,
+          if (formData.apiVoucherMode) {
+            // 兑换链接模式（餐饮代下单等：放单后直接发兑换链接，无需买家填手机号）
+            const apiConfig: Record<string, unknown> = {
+              require_account: false,
+              recharge_page: false,
+              poll_delay: 60,
+              poll_interval: 60,
+              max_poll: 8,
+              datas: {},
+              miniunit_id: mid,
+            }
+            if (formData.apiSuccessMessage.trim()) {
+              apiConfig.success_message = formData.apiSuccessMessage.trim()
+            }
+            cardData.api_config = apiConfig
+          } else {
+            // 充值链接模式（默认：买家在网页输手机号充值）
+            cardData.api_config = {
+              require_account: true,
+              recharge_page: true,
+              poll_delay: 60,
+              poll_interval: 60,
+              max_poll: 8,
+              datas: { target: '{account}' },
+              miniunit_id: mid,
+            }
           }
         }
       } else if (formData.type === 'text') {
@@ -431,9 +457,35 @@ export function CardFormModal({ cardId, initialData, onClose, onSaved }: CardFor
                         placeholder="在蜜蜂汇云后台商品详情中复制商品ID"
                       />
                     </div>
-                    <p className="text-xs text-gray-600 dark:text-gray-300 leading-relaxed">
-                      充值方式固定为「买家在网页输手机号充值」；查单轮询等参数由系统自动配置，无需填写。
-                    </p>
+                    <div>
+                      <label className="input-label">发货模式</label>
+                      <Select
+                        value={formData.apiVoucherMode ? 'voucher' : 'recharge'}
+                        onChange={(v) => updateField('apiVoucherMode', v === 'voucher')}
+                        options={[
+                          { value: 'recharge', label: '充值链接模式（买家填手机号充值）' },
+                          { value: 'voucher', label: '兑换链接模式（餐饮代下单，直接发链接）' },
+                        ]}
+                      />
+                    </div>
+                    {formData.apiVoucherMode ? (
+                      <div>
+                        <label className="input-label">发货文案模板（选填）</label>
+                        <textarea
+                          value={formData.apiSuccessMessage}
+                          onChange={(e) => updateField('apiSuccessMessage', e.target.value)}
+                          className="input-ios h-28 font-mono text-sm"
+                          placeholder={'🎉 麦当劳中薯条已下单成功！\n您的专属兑换链接（7天内有效）：\n{voucher}\n点链接选门店兑换取餐~'}
+                        />
+                        <p className="text-xs text-gray-600 dark:text-gray-300 leading-relaxed">
+                          支持 <code className="px-1 rounded bg-slate-100 dark:bg-slate-700">{'{voucher}'}</code> 占位符（自动替换为兑换链接）；留空用默认文案。
+                        </p>
+                      </div>
+                    ) : (
+                      <p className="text-xs text-gray-600 dark:text-gray-300 leading-relaxed">
+                        充值方式固定为「买家在网页输手机号充值」；查单轮询等参数由系统自动配置，无需填写。
+                      </p>
+                    )}
                   </div>
                 )}
               </div>

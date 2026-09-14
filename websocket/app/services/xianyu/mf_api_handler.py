@@ -734,13 +734,43 @@ class MfApiHandler:
 
             # 组装并发送结果消息
             if final_state == ORDER_STATE_SUCCESS:
+                # 提取兑换链接/卡密（餐饮代下单等返券业务：ys_cards[0].card_pwd 或 voucher）
+                voucher = ""
+                try:
+                    ys_cards = data.get("ys_cards") or []
+                    if isinstance(ys_cards, list) and ys_cards:
+                        voucher = (ys_cards[0].get("card_pwd") or "").strip()
+                    if not voucher:
+                        voucher = (data.get("voucher") or "").strip()
+                except Exception:
+                    voucher = ""
                 success_template = api_config.get("success_message") or DEFAULT_SUCCESS_MESSAGE
                 try:
-                    msg = success_template.format(goods_name=goods_name, account=account)
+                    msg = success_template.format(goods_name=goods_name, account=account, voucher=voucher)
                 except Exception:
-                    msg = success_template
+                    try:
+                        msg = success_template.format(goods_name=goods_name, account=account)
+                    except Exception:
+                        msg = success_template
+                # 有兑换链接且模板未含 {voucher} 时，兜底追加链接，确保买家一定能收到
+                if voucher and "{voucher}" not in (success_template or ""):
+                    msg += f"\n🔗 兑换链接（7天内有效）：\n{voucher}\n请点击链接选择门店兑换取餐～"
                 await self.parent.send_msg(self.ws, chat_id, buyer_id, msg)
-                logger.info(f"【{self.cookie_id}】蜜蜂充值成功已通知买家: order_id={order_id}")
+                logger.info(f"【{self.cookie_id}】蜜蜂充值成功已通知买家: order_id={order_id}, voucher={'有' if voucher else '无'}")
+                # 同步本地订单发货内容（记录兑换链接，供后台/补发查看）
+                if voucher:
+                    try:
+                        from common.services.order_service import OrderService
+                        from common.db.session import async_session_maker
+                        async with async_session_maker() as db_session:
+                            await OrderService(db_session).update_order_delivery_info(
+                                order_no=order_id,
+                                status="shipped",
+                                delivery_method="auto",
+                                delivery_content=f"兑换链接：{voucher}",
+                            )
+                    except Exception as e:
+                        logger.warning(f"【{self.cookie_id}】蜜蜂成功后更新订单发货内容失败: {self._safe_str(e)}")
             elif final_state == ORDER_STATE_UNKNOWN:
                 unknown_template = api_config.get("unknown_message") or DEFAULT_UNKNOWN_MESSAGE
                 try:
