@@ -88,7 +88,7 @@ npx tsc --noEmit
 #### logcat 验证
 
 ```
-[ITEMS] API返回 4 条, item_ids: ['1080630474055', '875361161234', '1080630474055', '875361161234']
+[ITEMS] API返回 4 条, item_ids: ['YOUR_ITEM_ID', 'YOUR_ITEM_ID', 'YOUR_ITEM_ID', 'YOUR_ITEM_ID']
 [ITEMS] 去重后 2 条
 ```
 

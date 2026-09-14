@@ -810,7 +810,7 @@ export function PersonalSettings() {
         </div>
         <div className="vben-card-body space-y-4">
           <p className="text-xs text-slate-500 dark:text-slate-400">
-            设置后，在闲鱼聊天中自己发送「关键字+订单号」即可触发自动重新发货。例如关键字为「重新触发」，发送「4502144774044041438重新触发」将提取订单号并自动发货。
+            设置后，在闲鱼聊天中自己发送「关键字+订单号」即可触发自动重新发货。例如关键字为「重新触发」，发送「123456789012345678重新触发」将提取订单号并自动发货。
             <br />
             <span className="text-amber-500 dark:text-amber-400">注意：关键字不包含前后空格；如果订单不在数据库中，系统会自动根据订单号获取订单信息后再发货。</span>
           </p>
