@@ -2500,11 +2500,51 @@ class AutoDeliveryHandler:
                         return None
 
                 elif rule['card_type'] == 'mf_api':
-                    # 蜜蜂汇云直充类型：询问手机号 → 放单 → 后台查单 → 结果通知买家
+                    # 蜜蜂汇云直充类型：发充值链接（或已有手机号直接放单）→ 后台查单 → 结果通知买家
                     text_content = await self._get_mf_api_card_content(
                         rule, order_id, item_id, send_user_id, chat_id, send_user_name
                     )
                     if text_content is None:
+                        # 已发充值链接/已询问（等待买家手机号）："发送了充值页面再发货"——
+                        # 发完链接后确认发货，让订单推进到已发货；买家在网页输手机号完成充值，
+                        # 充值结果由后台查单任务通知买家。
+                        if order_id and not skip_confirm and not platform_shipping_confirmed:
+                            if self.is_auto_confirm_enabled():
+                                try:
+                                    confirm_result = await self.auto_confirm(order_id, item_id)
+                                    if confirm_result and confirm_result.get('success'):
+                                        platform_shipping_confirmed = True
+                                        logger.info(
+                                            f"【{self.cookie_id}】🎉 蜜蜂直充已发充值链接，确认发货成功: order_id={order_id}"
+                                        )
+                                        # 同步本地订单状态为已发货
+                                        try:
+                                            from common.services.order_service import OrderService
+                                            from common.db.session import async_session_maker
+                                            async with async_session_maker() as db_session:
+                                                await OrderService(db_session).update_order_delivery_info(
+                                                    order_no=order_id,
+                                                    status="shipped",
+                                                    delivery_method="auto",
+                                                    delivery_content="充值链接已发送（等待买家填写手机号完成充值）",
+                                                )
+                                        except Exception as db_e:
+                                            logger.warning(
+                                                f"【{self.cookie_id}】蜜蜂直充发链接后更新订单状态失败: {self._safe_str(db_e)}"
+                                            )
+                                    else:
+                                        confirm_error = confirm_result.get('error', '未知错误') if confirm_result else '未知错误'
+                                        logger.warning(
+                                            f"【{self.cookie_id}】蜜蜂直充已发链接但确认发货失败: {confirm_error}，请手动确认发货，order_id={order_id}"
+                                        )
+                                except Exception as confirm_e:
+                                    logger.warning(
+                                        f"【{self.cookie_id}】蜜蜂直充发链接后确认发货异常: {self._safe_str(confirm_e)}，order_id={order_id}"
+                                    )
+                            else:
+                                logger.info(
+                                    f"【{self.cookie_id}】自动确认发货已关闭，蜜蜂直充发链接后跳过确认发货: order_id={order_id}"
+                                )
                         # 等待手机号（__WAITING_ACCOUNT__）时不视为失败，静默中断等待买家回复
                         self._last_delivery_fail_reason = (
                             f"蜜蜂直充等待买家手机号或放单失败: 卡券ID={rule['card_id']}, 名称={rule['card_name']}"

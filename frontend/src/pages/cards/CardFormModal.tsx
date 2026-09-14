@@ -18,6 +18,7 @@ const cardTypeOptions = [
   { value: 'data', label: '批量数据' },
   { value: 'api', label: 'API接口' },
   { value: 'image', label: '图片' },
+  { value: 'mf_api', label: '蜜蜂直充' },
 ]
 
 // 请求方法选项
@@ -42,7 +43,7 @@ const postParams = [
 // 卡券表单数据类型
 interface CardFormData {
   name: string
-  type: 'api' | 'text' | 'data' | 'image' | ''
+  type: 'api' | 'text' | 'data' | 'image' | 'mf_api' | ''
   apiUrl: string
   apiMethod: 'GET' | 'POST'
   apiTimeout: number
@@ -63,6 +64,9 @@ interface CardFormData {
   isMultiSpec: boolean
   specName: string
   specValue: string
+  /** 蜜蜂直充配置（只读展示） */
+  apiMiniunitId: string
+  apiRechargePage: boolean
 }
 
 interface CardFormModalProps {
@@ -107,6 +111,8 @@ export function cardToFormData(card: CardData): CardFormData {
     isMultiSpec: card.is_multi_spec || false,
     specName: card.spec_name || '',
     specValue: card.spec_value || '',
+    apiMiniunitId: (card.api_config as any)?.miniunit_id || '',
+    apiRechargePage: !!(card.api_config as any)?.recharge_page,
   }
 }
 
@@ -141,6 +147,8 @@ export const emptyCardFormData: CardFormData = {
   isMultiSpec: false,
   specName: '',
   specValue: '',
+  apiMiniunitId: '',
+  apiRechargePage: false,
 }
 
 export function CardFormModal({ cardId, initialData, onClose, onSaved }: CardFormModalProps) {
@@ -203,6 +211,10 @@ export function CardFormModal({ cardId, initialData, onClose, onSaved }: CardFor
     }
     if (formData.type === 'data' && !formData.dataContent.trim()) {
       addToast({ type: 'warning', message: '请输入批量数据' })
+      return false
+    }
+    if (formData.type === 'mf_api' && !isEditMode && !formData.apiMiniunitId.trim()) {
+      addToast({ type: 'warning', message: '请填写上游商品ID（miniunit_id）' })
       return false
     }
     if (formData.isMultiSpec && (!formData.specName.trim() || !formData.specValue.trim())) {
@@ -278,7 +290,7 @@ export function CardFormModal({ cardId, initialData, onClose, onSaved }: CardFor
     try {
       const cardData: Partial<CardData> = {
         name: formData.name.trim(),
-        type: formData.type as 'api' | 'text' | 'data' | 'image',
+        type: formData.type as CardData['type'],
         description: formData.description.trim() || undefined,
         enabled: true,
         delay_seconds: formData.delaySeconds,
@@ -301,6 +313,23 @@ export function CardFormModal({ cardId, initialData, onClose, onSaved }: CardFor
           headers: formData.apiHeaders.trim() || undefined,
           params: formData.apiParams.trim() || undefined,
           response_field: formData.apiResponseField.trim() || undefined,
+        }
+      } else if (formData.type === 'mf_api') {
+        if (isEditMode) {
+          // 编辑：不通过本表单修改 api_config，后端保留原蜜蜂对接配置
+          delete cardData.api_config
+        } else {
+          // 新建：按蜜蜂直充标准配置构造 api_config
+          const mid = formData.apiMiniunitId.trim()
+          cardData.api_config = {
+            require_account: true,
+            recharge_page: true,
+            poll_delay: 60,
+            poll_interval: 60,
+            max_poll: 8,
+            datas: { target: '{account}' },
+            miniunit_id: mid,
+          }
         }
       } else if (formData.type === 'text') {
         cardData.text_content = formData.textContent.trim()
@@ -361,9 +390,54 @@ export function CardFormModal({ cardId, initialData, onClose, onSaved }: CardFor
                     if (v !== 'text') updateField('useNoLogisticsForm', false)
                   }}
                   options={cardTypeOptions}
+                  disabled={isEditMode && formData.type === 'mf_api'}
                 />
               </div>
             </div>
+
+            {/* 蜜蜂直充配置 */}
+            {formData.type === 'mf_api' && (
+              <div className="border border-emerald-200 dark:border-emerald-800 rounded-lg p-4 space-y-3 bg-emerald-50/50 dark:bg-emerald-900/10">
+                <h3 className="font-medium text-emerald-700 dark:text-emerald-400">蜜蜂直充配置</h3>
+                {isEditMode ? (
+                  <div className="text-sm space-y-1.5 text-gray-700 dark:text-gray-300">
+                    <p>
+                      上游商品ID（miniunit_id）：
+                      <code className="ml-1 px-1.5 py-0.5 rounded bg-white dark:bg-gray-800 border border-emerald-200 dark:border-emerald-800 font-mono">
+                        {formData.apiMiniunitId || '—'}
+                      </code>
+                    </p>
+                    <p>
+                      充值方式：
+                      <span className="ml-1 font-medium">
+                        {formData.apiRechargePage ? '买家在网页输手机号充值' : '消息询问手机号'}
+                      </span>
+                    </p>
+                    <p className="text-amber-600 dark:text-amber-400 text-xs leading-relaxed">
+                      此卡券对接蜜蜂汇云直充，API 参数由系统配置，修改名称/价格等基础信息可正常保存，请勿改动卡券类型。
+                    </p>
+                  </div>
+                ) : (
+                  <div className="space-y-3">
+                    <div>
+                      <label className="input-label">
+                        上游商品ID（miniunit_id） <span className="text-red-500">*</span>
+                      </label>
+                      <input
+                        type="text"
+                        value={formData.apiMiniunitId}
+                        onChange={(e) => updateField('apiMiniunitId', e.target.value)}
+                        className="input-ios"
+                        placeholder="在蜜蜂汇云后台商品详情中复制商品ID"
+                      />
+                    </div>
+                    <p className="text-xs text-gray-600 dark:text-gray-300 leading-relaxed">
+                      充值方式固定为「买家在网页输手机号充值」；查单轮询等参数由系统自动配置，无需填写。
+                    </p>
+                  </div>
+                )}
+              </div>
+            )}
 
             {/* API 配置 */}
             {formData.type === 'api' && (

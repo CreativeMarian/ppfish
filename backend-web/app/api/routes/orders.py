@@ -493,6 +493,13 @@ async def manual_delivery(
                         item_id=order.item_id,
                         buyer_id=order.buyer_id
                     )
+                    # 详情在独立 session 中已提交到 DB，当前 session 的 identity map
+                    # 仍持有旧实例（spec_name/spec_value/is_bargain 等未刷新），
+                    # 先 refresh 强制重新加载，避免后续查卡券时规格为空导致匹配不到。
+                    try:
+                        await order_service.session.refresh(order)
+                    except Exception:
+                        order_service.session.expire_all()
                     # 重新获取订单（小刀状态可能已更新）
                     order = await order_service.get_order_by_no(request.order_no)
                     logger.info(f"订单详情已刷新: order_no={request.order_no}, is_bargain={order.is_bargain}")

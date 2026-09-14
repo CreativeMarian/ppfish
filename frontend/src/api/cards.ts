@@ -8,7 +8,7 @@ export interface CardData {
   id?: number
   item_id?: string  // 关联商品ID
   name: string
-  type: 'api' | 'text' | 'data' | 'image'
+  type: 'api' | 'text' | 'data' | 'image' | 'mf_api'
   description?: string
   enabled?: boolean
   delay_seconds?: number
@@ -23,12 +23,14 @@ export interface CardData {
   spec_name?: string
   spec_value?: string
   api_config?: {
-    url: string
-    method: string
+    url?: string
+    method?: string
     timeout?: number
     headers?: string
     params?: string
     response_field?: string
+    /** 蜜蜂直充（mf_api）扩展字段 */
+    [key: string]: unknown
   }
   text_content?: string
   data_content?: string

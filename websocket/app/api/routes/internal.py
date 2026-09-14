@@ -1994,7 +1994,7 @@ async def _deliver_order_impl(request: DeliverOrderRequest):
             logger.info(f"【内部API】订单 {request.order_no} 多数量发货: quantity={quantity}, card_type={card.type}")
 
         # 不支持的卡券类型直接拒绝
-        if card.type not in ('text', 'data', 'image', 'api'):
+        if card.type not in ('text', 'data', 'image', 'api', 'mf_api'):
             logger.error(f"【内部API】不支持的卡券类型: {card.type}")
             return {
                 "success": False,
@@ -2037,6 +2037,100 @@ async def _deliver_order_impl(request: DeliverOrderRequest):
             )
         except Exception:
             pass
+
+        # ============ 蜜蜂直充卡券（mf_api）：发充值链接 → 确认发货 ============
+        # 需求："补发卡也是要先通过发充值链接让用户填写手机号，再充值。发送了充值页面再发货。"
+        # 即：发完充值链接即确认发货（订单推进 shipped），买家在网页输入手机号完成充值，
+        # 充值结果由后台查单任务轮询后通知买家。
+        if card.type == 'mf_api':
+            try:
+                rule = {
+                    'card_id': card.id,
+                    'card_name': card.name,
+                    'card_type': card.type,
+                    'card_api_config': card.api_config,
+                    'card_description': card.description,
+                }
+                content = await xianyu_live.auto_delivery_handler._get_mf_api_card_content(
+                    rule=rule,
+                    order_id=request.order_no,
+                    item_id=request.item_id,
+                    buyer_id=request.buyer_id,
+                    chat_id=request.chat_id,
+                )
+                # content=None → 已发充值链接（等待买家输手机号）；非 None → 已直接放单成功文案
+                content_str = content or "充值链接已发送，请买家在页面输入手机号完成充值"
+
+                # "发送了充值页面再发货"：发完链接后确认发货（已确认过则跳过）
+                confirm_ok = False
+                confirm_note = ""
+                if skip_shipping_confirm:
+                    confirm_note = "（只发卡券模式，跳过确认发货）"
+                elif platform_shipping_confirmed:
+                    confirm_ok = True
+                elif xianyu_live.is_auto_confirm_enabled():
+                    try:
+                        confirm_result = await xianyu_live.auto_delivery_handler.auto_confirm(
+                            order_id=request.order_no,
+                            item_id=request.item_id,
+                            force=True,
+                        )
+                        if confirm_result and confirm_result.get('success'):
+                            confirm_ok = True
+                            platform_shipping_confirmed = True
+                            logger.info(
+                                f"【内部API】🎉 蜜蜂直充已发充值链接，确认发货成功: order_no={request.order_no}"
+                            )
+                        elif confirm_result and confirm_result.get('skipped_only_send_card'):
+                            confirm_note = "（确认发货被只发卡券开关拦截）"
+                        else:
+                            confirm_error = confirm_result.get('error', '未知错误') if confirm_result else '未知错误'
+                            confirm_note = f"（确认发货失败: {confirm_error}，请手动确认发货）"
+                            logger.warning(
+                                f"【内部API】蜜蜂直充发链接后确认发货失败: order_no={request.order_no}, {confirm_error}"
+                            )
+                    except Exception as confirm_exc:
+                        confirm_note = f"（确认发货异常: {confirm_exc}，请手动确认发货）"
+                        logger.warning(
+                            f"【内部API】蜜蜂直充发链接后确认发货异常: order_no={request.order_no}, {confirm_exc}"
+                        )
+                else:
+                    confirm_note = "（自动确认发货已关闭，请手动确认发货）"
+
+                # 落库：链接已发 + 确认发货结果
+                final_status = "shipped" if confirm_ok else "pending_ship"
+                try:
+                    async with async_session_maker() as session:
+                        from common.services.order_service import OrderService
+                        await OrderService(session).update_order_delivery_info(
+                            order_no=request.order_no,
+                            status=final_status,
+                            delivery_method=request.delivery_method or "scheduled",
+                            delivery_content=content_str,
+                        )
+                except Exception as db_exc:
+                    logger.warning(f"【内部API】蜜蜂直充发链接落库异常: order_no={request.order_no}, {db_exc}")
+
+                return {
+                    "success": True,
+                    "code": 200,
+                    "message": "充值链接已发送" + confirm_note,
+                    "data": {
+                        "order_no": request.order_no,
+                        "delivery_type": "mf_api",
+                        "content": content_str,
+                        "delivery_method": request.delivery_method or "scheduled",
+                        "confirm_shipped": confirm_ok,
+                    },
+                }
+            except Exception as mf_exc:
+                logger.error(f"【内部API】蜜蜂直充发货异常: order_no={request.order_no}, {mf_exc}")
+                return {
+                    "success": False,
+                    "code": 500,
+                    "message": f"蜜蜂直充发货失败: {mf_exc}",
+                    "data": None,
+                }
 
         # ============ 消费+发送一体化循环 ============
         # 关键设计：每一轮把"获取内容"和"发送"绑定为原子动作，无论发送成功/失败都把
