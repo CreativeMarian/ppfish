@@ -47,6 +47,7 @@ from . import (
     keywords,
     message,
     message_filters,
+    mf_price,
     notifications,
     orders,
     password_login,
@@ -204,6 +205,7 @@ api_router.include_router(chat_quick_phrase.router, tags=["在线聊天(新)快�
 api_router.include_router(chat_customer_order.router, tags=["在线聊天(新)客户订单"])  # 已定义prefix="/chat-new"
 # 版本检测（公开接口，无需登录即可查询版本信息）
 api_router.include_router(version.router, tags=["版本检测"])  # 已定义prefix="/version"
+api_router.include_router(mf_price.router, tags=["蜜蜂对接"])
 
 
 __all__ = ["api_router"]
