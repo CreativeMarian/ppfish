@@ -86,6 +86,8 @@ const createInternalSkuRows = (
     specs: row.specs || {},
     price: String(row.price ?? ''),
     stock: row.stock == null ? '' : String(row.stock),
+    // 进货价来自后端按卡券 miniunit_id 关联的蜜蜂成本，仅用于展示
+    cost: row.cost == null ? '' : String(row.cost),
   }))
 
 /** 把后端返回的平台商品详情转成发布表单同构的内部状态。 */

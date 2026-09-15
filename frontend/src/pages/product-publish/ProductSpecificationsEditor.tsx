@@ -327,18 +327,28 @@ export function ProductSpecificationsEditor({
             <thead>
               <tr>
                 {specifications.filter((spec) => spec.name && spec.values.length).map((spec) => <th key={spec.id}>{spec.name}</th>)}
-                <th>价格（元）</th>
+                <th>卖价（元）</th>
+                <th>进货价（元）</th>
                 <th>库存</th>
               </tr>
             </thead>
             <tbody>
-              {skuRows.map((row) => (
-                <tr key={row.key}>
-                  {specifications.filter((spec) => spec.name && spec.values.length).map((spec) => <td key={spec.id}>{row.specs[spec.name] || '-'}</td>)}
-                  <td><input type="number" min="0" step="0.01" className="input-ios min-w-28" placeholder="0.00" value={row.price} onChange={(event) => updateSku(row.key, 'price', event.target.value)} /></td>
-                  <td><input type="number" min="0" step="1" className="input-ios min-w-24" placeholder="0" value={row.stock} onChange={(event) => updateSku(row.key, 'stock', event.target.value)} /></td>
-                </tr>
-              ))}
+              {skuRows.map((row) => {
+                const sellPrice = Number(row.price)
+                const costPrice = Number(row.cost)
+                const isLoss = row.cost !== '' && costPrice > 0 && sellPrice > 0 && sellPrice < costPrice
+                return (
+                  <tr key={row.key}>
+                    {specifications.filter((spec) => spec.name && spec.values.length).map((spec) => <td key={spec.id}>{row.specs[spec.name] || '-'}</td>)}
+                    <td><input type="number" min="0" step="0.01" className="input-ios min-w-28" placeholder="0.00" value={row.price} onChange={(event) => updateSku(row.key, 'price', event.target.value)} /></td>
+                    <td className={isLoss ? 'text-red-600 dark:text-red-400 font-semibold' : 'text-slate-600 dark:text-slate-300'}>
+                      {row.cost ? `¥${row.cost}` : '—'}
+                      {isLoss && <span className="ml-1 text-[10px] text-red-500">亏本</span>}
+                    </td>
+                    <td><input type="number" min="0" step="1" className="input-ios min-w-24" placeholder="0" value={row.stock} onChange={(event) => updateSku(row.key, 'stock', event.target.value)} /></td>
+                  </tr>
+                )
+              })}
             </tbody>
           </table>
         </div>

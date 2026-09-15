@@ -24,6 +24,8 @@ export interface SkuRow {
   specs: Record<string, string>
   price: string
   stock: string
+  /** 进货价（仅编辑页展示用，来源于卡券对应的蜜蜂成本，可为空） */
+  cost?: string
 }
 
 export interface DuplicateSpecificationValue {

@@ -15,17 +15,27 @@
 from __future__ import annotations
 
 import json
+import re
 from pathlib import Path
 from typing import Any
 
 from loguru import logger
+from sqlalchemy import text as sa_text
 
 from app.core.paths import STATIC_ROOT
 from app.services.xianyu_direct_payload import DirectPublishError, text as _text
 from app.services.xianyu_item_edit_mapper import map_edit_detail_to_form
 from app.services.xianyu_item_payload_builder import build_item_payload
+from common.db.session import async_session_maker
 from common.services.xianyu_mtop import mtop_call
 from common.services.xianyu_publish_service import detect_publish_account_capability
+
+# 蜜蜂货源商品成本缓存表（miniunit_id -> 成本），用于商品编辑页展示进货价
+MF_GOODS_TABLE = "xy_mf_goods"
+# api_config 中 miniunit_id 可能是 JSON 或 Python 字面量，统一用正则提取
+_MINIUNIT_RE = re.compile(r"""miniunit_id['"]?\s*[:=]\s*['"]?(\d+)""")
+# 蜜蜂无效成本占位（888888/88888.88 等表示未定价），超过该阈值视为无效
+_MF_INVALID_COST = 88888.0
 
 EDIT_DETAIL_API = "mtop.idle.pc.backend.idleitem.editdetail"
 EDIT_API = "mtop.idle.pc.backend.idleitem.edit"
@@ -211,6 +221,91 @@ def _business_failure_message(res: dict[str, Any]) -> str:
     return ""
 
 
+def _card_tail(name: str, spec_value: str | None) -> str:
+    """取卡券用于匹配 SKU 的规格文本：优先 spec_value，否则取名称最后一段。"""
+    if spec_value and spec_value.strip():
+        return spec_value.strip()
+    tail = (name or "").strip()
+    if "-" in tail:
+        tail = tail.rsplit("-", 1)[-1].strip()
+    return tail
+
+
+def _match_cost(sku_text: str, mid_map: dict[str, float]) -> float | None:
+    """SKU 规格文本匹配卡券尾名，返回对应成本；匹配不到返回 None。
+
+    规则：先精确相等；再按"互相包含"取最长的匹配尾名，降低误配。
+    """
+    if not sku_text:
+        return None
+    best_tail = ""
+    best_cost = None
+    for tail, cost in mid_map.items():
+        if not tail:
+            continue
+        if tail == sku_text:
+            return cost
+        if tail in sku_text or sku_text in tail:
+            if len(tail) > len(best_tail):
+                best_tail = tail
+                best_cost = cost
+    return best_cost
+
+
+async def _attach_sku_costs(form: dict[str, Any], item_id: str, owner_id: int | None) -> dict[str, Any]:
+    """按商品关联卡券的 miniunit_id 关联蜜蜂成本，给 sku_rows 附加进货价（cost）。
+
+    不影响提交：编辑提交载荷由 toEditPayload 显式选取 specs/price/stock，cost 仅用于展示。
+    任何数据库/解析异常只记录日志，不阻断编辑详情返回。
+    """
+    sku_rows = form.get("sku_rows") or []
+    if not sku_rows or not item_id:
+        return form
+    try:
+        async with async_session_maker() as session:
+            card_rows = (
+                await session.execute(
+                    sa_text(
+                        "SELECT name, api_config, spec_value FROM xy_cards "
+                        "WHERE item_id = :item_id AND enabled = 1"
+                    ),
+                    {"item_id": item_id},
+                )
+            ).fetchall()
+            mid_map: dict[str, float] = {}
+            for name, api_config, spec_value in card_rows:
+                match = _MINIUNIT_RE.search(api_config or "")
+                if not match:
+                    continue
+                cost_value = (
+                    await session.execute(
+                        sa_text(
+                            "SELECT MIN(cost) FROM xy_mf_goods "
+                            "WHERE miniunit_id = :mid AND cost > 0 AND cost < :invalid"
+                        ),
+                        {"mid": match.group(1), "invalid": _MF_INVALID_COST},
+                    )
+                ).scalar()
+                if cost_value is None:
+                    continue
+                cost = float(cost_value)
+                if cost <= 0 or cost >= _MF_INVALID_COST:
+                    continue
+                tail = _card_tail(name, spec_value)
+                if tail:
+                    mid_map[tail] = cost
+            if mid_map:
+                for row in sku_rows:
+                    specs = row.get("specs") or {}
+                    sku_text = " ".join(str(value) for value in specs.values() if value)
+                    cost = _match_cost(sku_text, mid_map)
+                    if cost is not None:
+                        row["cost"] = round(cost, 2)
+    except Exception as exc:  # noqa: BLE001
+        logger.warning(f"附加商品进货价失败: item_id={item_id}, owner_id={owner_id}, err={exc}")
+    return form
+
+
 async def fetch_seller_item_edit_detail(
     *, account_id: str, cookie: str, item_id: str, owner_id: int | None = None
 ) -> dict[str, Any]:
@@ -241,6 +336,8 @@ async def fetch_seller_item_edit_detail(
         return failure
 
     form = map_edit_detail_to_form(detail or {})
+    # 附加进货价（卡券 miniunit_id -> 蜜蜂成本），供编辑页"进货价"列展示
+    form = await _attach_sku_costs(form, item_id, owner_id)
     return {
         "success": True,
         "message": "获取商品详情成功",

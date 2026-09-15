@@ -108,6 +108,8 @@ export interface PublishSkuRow {
   specs: Record<string, string>
   price: number
   stock: number
+  /** 进货价（仅商品编辑详情返回，用于界面展示，提交时不会带上） */
+  cost?: number | null
 }
 
 export interface ProductMaterial {
