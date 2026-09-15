@@ -74,6 +74,8 @@ export function ProductSpecificationsEditor({
       specs,
       price: previous.get(key)?.price || '',
       stock: previous.get(key)?.stock ?? '',
+      // 进货价是后端返回的只读展示字段，重新生成 SKU 行时必须原样保留，否则会被清空显示为 —
+      cost: previous.get(key)?.cost ?? '',
     }))
     if (JSON.stringify(nextRows) !== JSON.stringify(skuRows)) onChange(specifications, nextRows)
   }, [generatedRows, onChange, skuRows, specifications])
