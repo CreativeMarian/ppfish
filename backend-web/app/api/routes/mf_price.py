@@ -20,6 +20,7 @@ import logging
 import os
 import shlex
 import subprocess
+import sys
 from datetime import datetime
 from typing import Any, Dict, Optional
 
@@ -33,7 +34,18 @@ logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/mf", tags=["蜜蜂对接"])
 
-SYNC_LOG_PATH = "/tmp/mf_sync_manual_ui.log"
+
+def _sync_log_path() -> str:
+    """同步日志路径：Linux 固定 /tmp，Windows 用项目根 logs/"""
+    if sys.platform == "win32":
+        root = _project_root()
+        log_dir = os.path.join(root, "logs")
+        os.makedirs(log_dir, exist_ok=True)
+        return os.path.join(log_dir, "mf_sync_manual_ui.log")
+    return "/tmp/mf_sync_manual_ui.log"
+
+
+SYNC_LOG_PATH = _sync_log_path()
 
 
 def _project_root() -> str:
@@ -159,28 +171,47 @@ def sync_cost(current_user: User = Depends(deps.get_current_active_user)):
     等价于宝塔计划任务执行 mf_cost_sync_dynamic.py：
     逐个查询在用卡券 miniunit_id 的最新蜜蜂报价 -> upsert xy_mf_goods，
     完成后商品编辑页"进货价"列自动显示最新成本。
-    执行日志写入 /tmp/mf_sync_manual_ui.log（约 5-10 分钟）。
+    执行日志写入 {SYNC_LOG_PATH}（约 5-10 分钟）。
     """
     script = _find_sync_script()
     if not script:
         logger.warning("UI 手动同步失败：未找到 mf_cost_sync_dynamic.py")
         return {"code": 10001, "message": "未找到成本同步脚本 mf_cost_sync_dynamic.py", "data": None}
     try:
-        os.makedirs("/tmp", exist_ok=True)
-        with open(SYNC_LOG_PATH, "a", encoding="utf-8") as f:
+        log_path = SYNC_LOG_PATH
+        log_dir = os.path.dirname(log_path)
+        if log_dir:
+            os.makedirs(log_dir, exist_ok=True)
+        with open(log_path, "a", encoding="utf-8") as f:
             f.write(
                 f"\n===== UI手动触发 {datetime.now().strftime('%Y-%m-%d %H:%M:%S')} "
                 f"user={current_user.username if current_user else 'admin'} script={script} =====\n"
             )
-        cmd = "nohup python3 {} >> {} 2>&1 &".format(
-            shlex.quote(script), shlex.quote(SYNC_LOG_PATH)
-        )
-        subprocess.Popen(cmd, shell=True, start_new_session=True)
-        logger.info("UI 手动触发成本同步 script=%s", script)
+        env = dict(os.environ)
+        # 子进程读取 .env 的路径：Windows 本地无法访问 /www/wwwroot/ppfish/.env，
+        # 显式传入项目根 .env，保证本地/服务器都能跑
+        if not env.get("MF_ENV_FILE"):
+            env["MF_ENV_FILE"] = os.path.join(_project_root(), ".env")
+        if sys.platform == "win32":
+            fh = open(log_path, "a", encoding="utf-8")
+            subprocess.Popen(
+                [sys.executable, script],
+                stdout=fh,
+                stderr=subprocess.STDOUT,
+                env=env,
+                start_new_session=True,
+                creationflags=getattr(subprocess, "CREATE_NEW_PROCESS_GROUP", 0),
+            )
+        else:
+            cmd = "nohup python3 {} >> {} 2>&1 &".format(
+                shlex.quote(script), shlex.quote(log_path)
+            )
+            subprocess.Popen(cmd, shell=True, start_new_session=True, env=env)
+        logger.info("UI 手动触发成本同步 script=%s log=%s", script, log_path)
         return {
             "code": 200,
             "msg": "已启动成本同步（约5-10分钟），完成后商品编辑页进货价自动更新",
-            "data": {"log": SYNC_LOG_PATH},
+            "data": {"log": log_path},
         }
     except Exception as e:  # pragma: no cover
         logger.exception("启动成本同步失败: %s", e)
