@@ -14,6 +14,7 @@ import {
   ChevronLeft, ChevronRight, CheckSquare, Square, Edit2, Copy, Eye, Plus, Link
 } from 'lucide-react'
 import { getCards, updateCard, deleteCard, batchDeleteCards, type CardData, type CardPaginatedResult } from '@/api/cards'
+import { syncMfCost } from '@/api/mf'
 import { useUIStore } from '@/store/uiStore'
 import { useAuthStore } from '@/store/authStore'
 import { PageLoading } from '@/components/common/Loading'
@@ -66,6 +67,21 @@ export function Cards() {
   // 关联商品弹窗
   const [relationCard, setRelationCard] = useState<CardData | null>(null)
   const [relationReadonly, setRelationReadonly] = useState(false)
+
+  // 手动同步进货价（蜜蜂成本）
+  const [syncingCost, setSyncingCost] = useState(false)
+  const handleSyncCost = async () => {
+    if (syncingCost) return
+    try {
+      setSyncingCost(true)
+      const res = await syncMfCost()
+      addToast({ type: 'success', message: (res as { msg?: string })?.msg || '已启动成本同步，约5-10分钟完成' })
+    } catch {
+      addToast({ type: 'error', message: '启动同步失败，请稍后重试' })
+    } finally {
+      setSyncingCost(false)
+    }
+  }
 
   // 分页状态
   const [page, setPage] = useState(1)
@@ -246,6 +262,10 @@ export function Cards() {
           <button onClick={() => loadCards()} className="btn-ios-secondary">
             <RefreshCw className="w-4 h-4" />
             刷新
+          </button>
+          <button onClick={handleSyncCost} className="btn-ios-secondary" disabled={syncingCost}>
+            <RefreshCw className="w-4 h-4" />
+            {syncingCost ? '同步中…' : '同步进货价'}
           </button>
         </div>
       </div>
