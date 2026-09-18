@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef, useCallback } from 'react'
 import { Navigate } from 'react-router-dom'
-import { Settings as SettingsIcon, Save, Mail, RefreshCw, Eye, EyeOff, Copy, Upload, MessageCircle, Users, Percent, CreditCard, Megaphone, Heart, Globe, CalendarClock } from 'lucide-react'
+import { Settings as SettingsIcon, Save, Mail, RefreshCw, Eye, EyeOff, Copy, Upload, MessageCircle, Users, Percent, CreditCard, Megaphone, Heart, Globe, CalendarClock, Truck } from 'lucide-react'
 import {
   buildHiddenMenuSettingsPayload,
   getHiddenMenuKeysFromSettings,
@@ -19,6 +19,8 @@ import {
   testEmailSend,
   uploadQrcode,
   getQrcodeUrl,
+  getAutoConfirmStatus,
+  updateAutoConfirmGlobal,
 } from '@/api/settings'
 import { useUIStore } from '@/store/uiStore'
 import { useAuthStore } from '@/store/authStore'
@@ -68,6 +70,11 @@ export function Settings() {
   const [distributionSaving, setDistributionSaving] = useState(false)
   // 用户到期/续期设置独立保存状态
   const [userExpirySaving, setUserExpirySaving] = useState(false)
+  // 自动确认发货全局开关状态
+  const [autoConfirmOn, setAutoConfirmOn] = useState<boolean | null>(null)
+  const [autoConfirmCount, setAutoConfirmCount] = useState(0)
+  const [autoConfirmMixed, setAutoConfirmMixed] = useState(false)
+  const [autoConfirmSaving, setAutoConfirmSaving] = useState(false)
   const [settings, setSettings] = useState<SystemSettings | null>(null)
 
   // SMTP密码显示状态
@@ -113,6 +120,13 @@ export function Settings() {
         setSettings(result.data)
         setIsExeMode(Boolean(result.data['runtime.is_exe_mode']))
         setHiddenMenuKeys(getHiddenMenuKeysFromSettings(result.data))
+      }
+      // 加载自动确认发货全局状态
+      const autoConfirmRes = await getAutoConfirmStatus()
+      if (autoConfirmRes.success && autoConfirmRes.data) {
+        setAutoConfirmOn(autoConfirmRes.data.enabled)
+        setAutoConfirmCount(autoConfirmRes.data.account_count)
+        setAutoConfirmMixed(autoConfirmRes.data.mixed)
       }
       // 加载群二维码
       const [wechatRes, qqRes, wechatOfficialRes, telegramRes, rewardRes] = await Promise.all([
@@ -406,6 +420,26 @@ export function Settings() {
     }
   }
 
+  // 自动确认发货全局开关：点击即切换（蜜蜂直连模式下应关闭，避免重复发货）
+  const handleAutoConfirmToggle = async () => {
+    if (autoConfirmOn === null || autoConfirmSaving) return
+    const next = !autoConfirmOn
+    try {
+      setAutoConfirmSaving(true)
+      const result = await updateAutoConfirmGlobal(next)
+      if (result.success) {
+        setAutoConfirmOn(next)
+        addToast({ type: 'success', message: result.message || `自动确认发货已${next ? '开启' : '关闭'}` })
+      } else {
+        addToast({ type: 'error', message: result.message || '操作失败' })
+      }
+    } catch (error) {
+      addToast({ type: 'error', message: getApiErrorMessage(error, '操作失败') })
+    } finally {
+      setAutoConfirmSaving(false)
+    }
+  }
+
   const handleTestEmail = useCallback(async () => {
     if (!testEmail) {
       addToast({ type: 'warning', message: '请输入测试邮箱地址' })
@@ -597,6 +631,47 @@ export function Settings() {
 
       {/* 服务管理：消息服务 / 后端服务 / 定时任务服务 重启（仅管理员可见，置于最上方） */}
       {user?.is_admin && <ServiceRestartCard />}
+
+      {/* 自动发货设置：全局开关（仅管理员可见） */}
+      {user?.is_admin && (
+        <div className="grid grid-cols-1 gap-4">
+          <div className="vben-card">
+            <div className="vben-card-header">
+              <h2 className="vben-card-title">
+                <Truck className="w-4 h-4" />
+                自动发货设置
+              </h2>
+            </div>
+            <div className="vben-card-body">
+              <div className="flex items-center justify-between py-3 border-b border-slate-100 dark:border-slate-700">
+                <div>
+                  <p className="font-medium text-slate-900 dark:text-slate-100">自动确认发货</p>
+                  <p className="text-sm text-slate-500 dark:text-slate-400">
+                    {autoConfirmMixed
+                      ? '在线账号状态不一致，点击开关将统一设置'
+                      : autoConfirmOn
+                        ? '已开启（ppfish 自营发货模式）'
+                        : '已关闭（蜜蜂直连模式下由蜜蜂自动发货，避免重复发货）'}
+                    （共 {autoConfirmCount} 个在线账号）
+                  </p>
+                </div>
+                <label className="switch-ios">
+                  <input
+                    type="checkbox"
+                    checked={Boolean(autoConfirmOn)}
+                    disabled={autoConfirmSaving}
+                    onChange={handleAutoConfirmToggle}
+                  />
+                  <span className="switch-slider"></span>
+                </label>
+              </div>
+              <p className="text-xs text-slate-400 mt-3">
+                说明：蜜蜂直连闲鱼自动发货模式下，本开关应保持<b className="text-slate-500">关闭</b>，由蜜蜂统一发货，避免与蜜蜂重复发货被封店；改用 ppfish 自营发货时再开启。
+              </p>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* 基础设置 + SMTP邮件配置（仅管理员可见） */}
       {user?.is_admin && (

@@ -293,7 +293,7 @@ env = load_env()
 APP_KEY = env.get("MF_APP_KEY")
 APP_SECRET = env.get("MF_APP_SECRET")
 BASE = env.get("MF_BASE_URL", "https://merchant.task.mf178.cn").rstrip("/")
-CALLBACK = env.get("MF_PRICE_CALLBACK", "http://43.226.44.86:9000/api/v1/mf/price-notify")
+CALLBACK = env.get("MF_PRICE_CALLBACK", "http://43.226.44.86:8089/api/v1/mf/price-notify")
 MYSQL = {
     "host": env.get("MYSQL_HOST", "127.0.0.1"),
     "port": int(env.get("MYSQL_PORT", "3306")),

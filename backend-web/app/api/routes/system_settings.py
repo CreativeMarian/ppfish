@@ -19,6 +19,7 @@ from app.core.http_client import get_http_client
 from common.models.user import User, UserRole
 from common.schemas.common import ApiResponse
 from common.schemas.system_setting import (
+    AutoConfirmUpdateRequest,
     RemotePasswordLoginTestRequest,
     RemoteTokenTestRequest,
     SystemSettingUpdate,
@@ -393,6 +394,50 @@ async def test_email_send(
     
     success, message = await send_test_email(email)
     return ApiResponse(success=success, message=message)
+
+
+# ==================== 自动确认发货（全局开关） ====================
+# 用于在"系统设置"界面一键开启/关闭所有在线账号的自动确认发货。
+# 蜜蜂直连模式下应关闭（发货由蜜蜂托管，避免重复发货）；ppfish 自营发货时开启。
+
+@router.get("/auto-confirm")
+async def get_auto_confirm_status(
+    current_user: User = Depends(deps.get_current_admin_user),
+    account_service: "AccountService" = Depends(deps.get_account_service),
+) -> dict:
+    """获取所有 active 账号的自动确认发货状态汇总。"""
+    accounts = await account_service.list_accounts()
+    active = [a for a in accounts if str(a.status).lower() == "active"]
+    if not active:
+        return {"success": True, "data": {"enabled": False, "account_count": 0, "mixed": False}}
+    all_on = all(bool(a.auto_confirm) for a in active)
+    all_off = not any(bool(a.auto_confirm) for a in active)
+    return {
+        "success": True,
+        "data": {
+            "enabled": all_on,
+            "account_count": len(active),
+            "mixed": (not all_on) and (not all_off),
+        },
+    }
+
+
+@router.post("/auto-confirm", response_model=ApiResponse)
+async def set_auto_confirm_global(
+    payload: AutoConfirmUpdateRequest,
+    current_user: User = Depends(deps.get_current_admin_user),
+    account_service: "AccountService" = Depends(deps.get_account_service),
+) -> ApiResponse:
+    """批量开启/关闭所有 active 账号的自动确认发货。"""
+    accounts = await account_service.list_accounts()
+    active = [a for a in accounts if str(a.status).lower() == "active"]
+    for acc in active:
+        await account_service.update_auto_confirm(acc, payload.enabled)
+    verb = "开启" if payload.enabled else "关闭"
+    return ApiResponse(
+        success=True,
+        message=f"已{verb}自动确认发货（{len(active)} 个账号）",
+    )
 
 
 @router.post("/test-token-remote", response_model=ApiResponse)

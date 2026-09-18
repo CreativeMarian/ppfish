@@ -522,3 +522,21 @@ export const uploadQrcode = async (type: QrcodeType, file: File): Promise<ApiRes
 export const getQrcodeUrl = async (type: QrcodeType): Promise<{ success: boolean; data?: { image_url: string } }> => {
   return get(`/api/v1/qrcode/${type}`)
 }
+
+// ========== 自动确认发货（全局开关，系统设置界面） ==========
+
+export interface AutoConfirmStatus {
+  enabled: boolean
+  account_count: number
+  mixed: boolean
+}
+
+// 查询所有在线账号的自动确认发货状态（enabled=全部开启、mixed=账号状态不一致）
+export const getAutoConfirmStatus = async (): Promise<{ success: boolean; data?: AutoConfirmStatus; message?: string }> => {
+  return get(`${SYSTEM_SETTINGS_PREFIX}/auto-confirm`)
+}
+
+// 批量开启/关闭所有在线账号的自动确认发货
+export const updateAutoConfirmGlobal = async (enabled: boolean): Promise<ApiResponse> => {
+  return post(`${SYSTEM_SETTINGS_PREFIX}/auto-confirm`, { enabled })
+}

@@ -8,6 +8,10 @@ class SystemSettingUpdate(BaseModel):
     description: str | None = None
 
 
+class AutoConfirmUpdateRequest(BaseModel):
+    enabled: bool
+
+
 class RemoteTokenTestRequest(BaseModel):
     remote_url: str
     remote_secret_key: str
